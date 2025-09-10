@@ -89,44 +89,49 @@ fn collect_raw_drone_data() -> Vec<(f64, f64)> {
     ]
 }
 
-/// Filter predicate to check if a drone is within the radar's FOV that is 
-/// capable of dealing with the wraparound case.
-fn is_visible(start_angle: f64, end_angle: f64) -> impl Fn(&DronePositionPolar) -> bool {
-    move |p: &DronePositionPolar| {
-        if start_angle <= end_angle {
-            start_angle <= p.theta && p.theta <= end_angle
-        } else {
-            // Wraparound case
-            p.theta >= start_angle || p.theta <= end_angle
-        }
+/// Calculate the center angle of an FOV window, handling wraparound
+fn calculate_fov_center(start_angle: f64, fov: f64) -> f64 {
+    let end_angle = start_angle + fov;
+    if end_angle <= 360.0 {
+        (start_angle + end_angle) / 2.0
+    } else {
+        ((start_angle + end_angle) / 2.0) % 360.0
     }
 }
 
 /// Find the optimal radar direction to maximize the number of visible drones
 fn find_optimal_radar_direction(sorted_positions: Vec<DronePositionPolar>, fov: f64) -> f64 {
+    let n = sorted_positions.len();
+
+    // Duplicate with +360° offsets to handle wraparound
+    let mut angles: Vec<f64> = sorted_positions.iter().map(|p| p.theta).collect();
+    let extra_angles: Vec<f64> = angles.iter().map(|a| a + 360.0).collect();
+    angles.extend(extra_angles);
+
     let mut max_visible = 0;
-    let mut best_angle = 0.0;
-    for i in 0..sorted_positions.len() {
-        let start_angle = sorted_positions[i].theta;
+    let mut best_start_angle = 0.0;
 
-        // Wrap around the end using modulo 360
-        let end_angle = (start_angle + fov) % 360.0;
+    let mut j = 0;
 
-        let visible_count = sorted_positions
-            .iter()
-            .filter(|p| is_visible(start_angle, end_angle)(p))
-            .count();
-        if visible_count > max_visible {
-            max_visible = visible_count;
-            best_angle = if start_angle <= end_angle {
-                (start_angle + end_angle) / 2.0
-            } else {
-                // Wraparound case: add 360 to end_angle for calculation, then normalize
-                ((start_angle + end_angle + 360.0) / 2.0) % 360.0
-            };
+    // Starting with the position of each drone, see how many fit in the FOV
+    for i in 0..n {
+        let start_angle = angles[i];
+        let end_angle = start_angle + fov;
+
+        // Gets us to O(n * log(n)) because at least we're not iterating over the
+        // whole array each time like we were with the filter
+        while j < angles.len() && angles[j] <= end_angle {
+            j += 1;
+        }
+
+        let visible = j - i;
+        if visible > max_visible {
+            max_visible = visible;
+            best_start_angle = start_angle;
         }
     }
-    best_angle
+
+    calculate_fov_center(best_start_angle, fov)
 }
 
 fn main() {
