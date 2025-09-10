@@ -123,8 +123,8 @@ fn find_optimal_radar_direction(sorted_positions: Vec<DronePositionPolar>, fov: 
         while j < angles.len() && angles[j] <= end_angle {
             j += 1;
         }
-
         let visible = j - i;
+
         if visible > max_visible {
             max_visible = visible;
             best_start_angle = start_angle;
