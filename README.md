@@ -9,4 +9,4 @@
 
 ## Quick Start
 
-This can be run with a simple `cargo run`
+This can be run with a simple `cargo run`.
