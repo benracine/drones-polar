@@ -55,6 +55,9 @@ struct DronePositionPolar {
 /// From Cartesian to Polar coordinates
 impl From<DronePosition> for DronePositionPolar {
     fn from(p: DronePosition) -> Self {
+        // atan2 returns angle in radians
+        // convert to degrees 
+        // Theta could be negative, so we add 360 and then take modulo 360 to ensure it's in [0, 360)
         let theta = (p.y.atan2(p.x) * 180.0 / PI + 360.0) % 360.0;
         Self { theta }
     }
