@@ -30,86 +30,39 @@
 use itertools::Itertools;
 use std::f64::consts::PI;
 
+const FOV_DEGREES: f64 = 90.0;
+
+/// Cartesian coordinates of a drone.
 #[derive(Debug, Clone, Copy)]
 struct DronePosition {
     x: f64,
     y: f64,
 }
 
+/// From tuple (x, y) to DronePosition
 impl From<(f64, f64)> for DronePosition {
     fn from((x, y): (f64, f64)) -> Self {
         Self { x, y }
     }
 }
 
+/// Polar coordinates of a drone.
 #[derive(Debug, Clone, Copy)]
 struct DronePositionPolar {
     theta: f64, // angle in degrees
 }
 
+/// From Cartesian to Polar coordinates
 impl From<DronePosition> for DronePositionPolar {
     fn from(p: DronePosition) -> Self {
-        let theta_deg = p.y.atan2(p.x) * 180.0 / PI;
-        let normalized = (theta_deg + 360.0) % 360.0;
-        Self { theta: normalized }
+        let theta = (p.y.atan2(p.x) * 180.0 / PI + 360.0) % 360.0;
+        Self { theta }
     }
 }
 
-/*
-fn count_drones_in_range(start_angle: f64, drones: &[DronePositionPolar], fov_degrees: f64) -> usize {
-    let end_angle = (start_angle + fov_degrees) % 360.0;
-    if start_angle < end_angle {
-        drones
-            .iter()
-            .filter(|&&drone| drone.theta >= start_angle && drone.theta <= end_angle)
-            .count()
-    } else {
-        // Wrap around case
-        drones
-            .iter()
-            .filter(|&&drone| drone.theta >= start_angle || drone.theta <= end_angle)
-            .count()
-    }
-}
-
-fn optimal_radar_direction(drones: &[DronePosition], fov_degrees: f64) -> f64 {
-    // TODO: Implement the function.
-    let radial_done_positions: Vec<DronePositionPolar> =
-      drones.iter().map(|&drone| { drone.into() }).collect();
-
-    let mut counter = HashMap::new();
-    for theta_i = 0..=360 {
-      let count = count_drones_in_range(theta_i, &radial_drone_positions);
-      counter.insert(theta_i, count);
-    }
-
-    let max_angle = counter.max_by_key(|&(_, &val)| val);
-
-    println!("max_angle = {:?}", max_angle);
-
-    let sorted_drone_positions = radial_drone_positions.sortBy(|&(_, &val)| val);
-
-    let mut max = 0;
-    for (position, index) in sorted_drone_positions.enumerate() {
-      let start = position.theta;
-      let end = position.theta + 90;
-      let mut counter = 0;
-
-      for i index..=sorted_drone_positions.len() {
-        let in_window = start < position.theta && position.theta < end;
-        if in_window {
-          counter += 1;
-        }
-      }
-      if (counter > max)  {
-        max = counter;
-      }
-    }
-}
-*/
-
-fn main() {
-    let coords = vec![
+/// Get the raw drone data from the field in the form of a vector of tuples
+fn collect_raw_drone_data() -> Vec<(f64, f64)> {
+    vec![
         (2.3, 4.1),
         (-3.7, 1.5),
         (5.5, -0.9),
@@ -130,9 +83,64 @@ fn main() {
         (1.9, 3.2),
         (-2.2, 4.7),
         (3.6, -2.5),
-    ];
+    ]
+}
 
-    let sorted_radial_drone_positions = coords
+/// Filter predicate to check if a drone is within the radar's FOV that is 
+/// capable of dealing with the wraparound case.
+fn is_visible(start_angle: f64, end_angle: f64) -> impl Fn(&DronePositionPolar) -> bool {
+    move |p: &DronePositionPolar| {
+        if start_angle <= end_angle {
+            start_angle <= p.theta && p.theta <= end_angle
+        } else {
+            // Wraparound case
+            p.theta >= start_angle || p.theta <= end_angle
+        }
+    }
+}
+
+/// Find the optimal radar direction to maximize the number of visible drones
+fn find_optimal_radar_direction(sorted_positions: Vec<DronePositionPolar>, fov: f64) -> f64 {
+    let mut max_visible = 0;
+    let mut best_angle = 0.0;
+    for i in 0..sorted_positions.len() {
+        let start_angle = sorted_positions[i].theta;
+
+        // Wrap around the end using modulo 360
+        let end_angle = (start_angle + fov) % 360.0;
+
+        let visible_count = sorted_positions
+            .iter()
+            .filter(|p| is_visible(start_angle, end_angle)(p))
+            .count();
+        if visible_count > max_visible {
+            max_visible = visible_count;
+            best_angle = if start_angle <= end_angle {
+                (start_angle + end_angle) / 2.0
+            } else {
+                // Wraparound case: add 360 to end_angle for calculation, then normalize
+                ((start_angle + end_angle + 360.0) / 2.0) % 360.0
+            };
+        }
+    }
+    best_angle
+}
+
+fn main() {
+    // Get the raw data from the field
+    let coords = collect_raw_drone_data();
+
+    // Deal with the empty data case
+    let n = coords.len();
+    if n == 0 {
+        println!("Not enough data to determine optimal direction.");
+        return;
+    }
+
+    // Reformat the drone data to be in polar coordinates and sorted from low to high theta angles
+    // Map from tuple -> DronePosition -> DronePositionPolar
+    // Then sort by low to high theta angle
+    let sorted_radial_drone_positions: Vec<DronePositionPolar> = coords
         .into_iter()
         .map(DronePosition::from)
         .map(DronePositionPolar::from)
@@ -141,10 +149,10 @@ fn main() {
                 .partial_cmp(&b.theta)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .collect::<Vec<_>>();
+        .collect();
 
-    // Ok, now invoke a function that computes the optimal radar direction
-    let fov_degrees = 90.0;
-    let optimal_direction = find_optimal_radar_direction(&sorted_radial_drone_positions, &fov_degrees);
+    let optimal_direction =
+        find_optimal_radar_direction(sorted_radial_drone_positions, FOV_DEGREES);
 
+    println!("Optimal radar direction: {:.2}°", optimal_direction);
 }
